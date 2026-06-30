@@ -23,7 +23,7 @@ location within a Container's file tree for Containers that
 need access to the Kubernetes API.
 
 Having a defined format allows:
-  - clients to be implmented in multiple languages
+  - clients to be implemented in multiple languages
   - applications which link clients to be portable across
     clusters with different authentication styles (e.g.
     some may use SSL Client certs, others may not, etc)
@@ -32,7 +32,7 @@ Having a defined format allows:
 
 The file format is json, marshalled from a struct authcfg.Info.
 
-Clinet libraries in other languages should use the same format.
+Client libraries in other languages should use the same format.
 
 It is not intended to store general preferences, such as default
 namespace, output options, etc.  CLIs (such as kubectl) and UIs should
@@ -45,41 +45,40 @@ client.Client from an authcfg.Info.
 
 Example:
 
-    import (
-        "pkg/client"
-        "pkg/client/auth"
-    )
+	import (
+	    "pkg/client"
+	    "pkg/client/auth"
+	)
 
-    info, err := auth.LoadFromFile(filename)
-    if err != nil {
-      // handle error
-    }
-    clientConfig = client.Config{}
-    clientConfig.Host = "example.com:4901"
-    clientConfig = info.MergeWithConfig()
-    client := client.New(clientConfig)
-    client.Pods(ns).List()
+	info, err := auth.LoadFromFile(filename)
+	if err != nil {
+	  // handle error
+	}
+	clientConfig = client.Config{}
+	clientConfig.Host = "example.com:4901"
+	clientConfig = info.MergeWithConfig()
+	client := client.New(clientConfig)
+	client.Pods(ns).List()
 */
 package auth
 
 // TODO: need a way to rotate Tokens.  Therefore, need a way for client object to be reset when the authcfg is updated.
 import (
 	"encoding/json"
-	"io/ioutil"
 	"os"
 
-	"k8s.io/client-go/rest"
+	restclient "k8s.io/client-go/rest"
 )
 
 // Info holds Kubernetes API authorization config.  It is intended
 // to be read/written from a file as a JSON object.
 type Info struct {
 	User        string
-	Password    string
+	Password    string `datapolicy:"password"`
 	CAFile      string
 	CertFile    string
 	KeyFile     string
-	BearerToken string
+	BearerToken string `datapolicy:"token"`
 	Insecure    *bool
 }
 
@@ -90,7 +89,7 @@ func LoadFromFile(path string) (*Info, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil, err
 	}
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -104,8 +103,8 @@ func LoadFromFile(path string) (*Info, error) {
 // MergeWithConfig returns a copy of a client.Config with values from the Info.
 // The fields of client.Config with a corresponding field in the Info are set
 // with the value from the Info.
-func (info Info) MergeWithConfig(c rest.Config) (rest.Config, error) {
-	var config rest.Config = c
+func (info Info) MergeWithConfig(c restclient.Config) (restclient.Config, error) {
+	var config = c
 	config.Username = info.User
 	config.Password = info.Password
 	config.CAFile = info.CAFile
@@ -118,6 +117,7 @@ func (info Info) MergeWithConfig(c rest.Config) (rest.Config, error) {
 	return config, nil
 }
 
+// Complete returns true if the Kubernetes API authorization info is complete.
 func (info Info) Complete() bool {
 	return len(info.User) > 0 ||
 		len(info.CertFile) > 0 ||
