@@ -44,7 +44,7 @@ If `--kubecfg-file` is omitted the app tries in-cluster config.
 - **Global flag variables**: CLI args are stored in package-level `flag` variables (e.g. `argAWSRegion`, `argGCRURL`). Tests mutate these globals.
 - **Global retry config**: `RetryCfg` and backoff timers are globals; tests call `disableRetries()` / `enableShortRetries()` to avoid long waits.
 - **Test fakes are extensive**: `fakeKubeClient`, `fakeEcrClient`, `fakeGcrClient`, `fakeDprClient`, `fakeACRClient` are all defined in `main_test.go`.
-- The project uses **k8s.io/client-go v2.0.0** (very old API surface).
+- Uses **k8s.io/client-go v0.36.2** and **AWS SDK for Go v2**.
 
 ## Constraints
 

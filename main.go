@@ -33,15 +33,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ecr"
+	"context"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/cenkalti/backoff"
 	"github.com/sirupsen/logrus"
 	flag "github.com/spf13/pflag"
 	"github.com/upmc-enterprises/registry-creds/k8sutil"
-	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	v1 "k8s.io/api/core/v1"
@@ -133,7 +135,7 @@ type dprInterface interface {
 }
 
 type ecrInterface interface {
-	GetAuthorizationToken(input *ecr.GetAuthorizationTokenInput) (*ecr.GetAuthorizationTokenOutput, error)
+	GetAuthorizationToken(ctx context.Context, input *ecr.GetAuthorizationTokenInput, optFns ...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error)
 }
 
 type gcrInterface interface {
@@ -145,30 +147,34 @@ type acrInterface interface {
 }
 
 func newEcrClient() ecrInterface {
-	sess := session.Must(session.NewSession())
-	awsConfig := aws.NewConfig().WithRegion(*argAWSRegion)
-
-	if *argAWSAssumeRole != "" {
-		creds := stscreds.NewCredentials(sess, *argAWSAssumeRole)
-		awsConfig.Credentials = creds
+	ctx := context.Background()
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(*argAWSRegion))
+	if err != nil {
+		logrus.Fatalf("unable to load SDK config, %v", err)
 	}
 
-	return ecr.New(sess, awsConfig)
+	if *argAWSAssumeRole != "" {
+		stsClient := sts.NewFromConfig(cfg)
+		provider := stscreds.NewAssumeRoleProvider(stsClient, *argAWSAssumeRole)
+		cfg.Credentials = aws.NewCredentialsCache(provider)
+	}
+
+	return ecr.NewFromConfig(cfg)
 }
 
 type dprClient struct{}
 
 func (dpr dprClient) getAuthToken(server, user, password string) (AuthToken, error) {
 	if server == "" {
-		return AuthToken{}, fmt.Errorf(fmt.Sprintf("Failed to get auth token for docker private registry: empty value for %s", dockerPrivateRegistryServerKey))
+		return AuthToken{}, fmt.Errorf("Failed to get auth token for docker private registry: empty value for %s", dockerPrivateRegistryServerKey)
 	}
 
 	if user == "" {
-		return AuthToken{}, fmt.Errorf(fmt.Sprintf("Failed to get auth token for docker private registry: empty value for %s", dockerPrivateRegistryUserKey))
+		return AuthToken{}, fmt.Errorf("Failed to get auth token for docker private registry: empty value for %s", dockerPrivateRegistryUserKey)
 	}
 
 	if password == "" {
-		return AuthToken{}, fmt.Errorf(fmt.Sprintf("Failed to get auth token for docker private registry: empty value for %s", dockerPrivateRegistryPasswordKey))
+		return AuthToken{}, fmt.Errorf("Failed to get auth token for docker private registry: empty value for %s", dockerPrivateRegistryPasswordKey)
 	}
 
 	token := base64.StdEncoding.EncodeToString([]byte(strings.Join([]string{user, password}, ":")))
@@ -211,7 +217,7 @@ func (c *controller) getGCRAuthorizationKey() ([]AuthToken, error) {
 	}
 
 	if token.Type() != "Bearer" {
-		return []AuthToken{}, fmt.Errorf(fmt.Sprintf("expected token type \"Bearer\" but got \"%s\"", token.Type()))
+		return []AuthToken{}, fmt.Errorf("expected token type \"Bearer\" but got \"%s\"", token.Type())
 	}
 
 	tokens := make([]AuthToken, 0)
@@ -221,24 +227,20 @@ func (c *controller) getGCRAuthorizationKey() ([]AuthToken, error) {
 }
 
 func (c *controller) getECRAuthorizationKey() ([]AuthToken, error) {
-
 	var tokens []AuthToken
-	var regIds []*string
-	regIds = make([]*string, len(awsAccountIDs))
+	regIds := make([]string, len(awsAccountIDs))
 
 	for i, awsAccountID := range awsAccountIDs {
-		regIds[i] = aws.String(awsAccountID)
+		regIds[i] = awsAccountID
 	}
 
 	params := &ecr.GetAuthorizationTokenInput{
 		RegistryIds: regIds,
 	}
 
-	resp, err := c.ecrClient.GetAuthorizationToken(params)
+	resp, err := c.ecrClient.GetAuthorizationToken(context.Background(), params)
 
 	if err != nil {
-		// Print the error, cast err to awserr.Error to get the Code and
-		// Message from an error.
 		logrus.Println(err.Error())
 		return []AuthToken{}, err
 	}

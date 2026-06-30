@@ -11,8 +11,9 @@ import (
 
 	"context"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ecr"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	awsecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/upmc-enterprises/registry-creds/k8sutil"
@@ -240,10 +241,10 @@ func (f *fakeNamespaces) ApplyStatus(ctx context.Context, namespace *corev1.Name
 
 type fakeEcrClient struct{}
 
-func (f *fakeEcrClient) GetAuthorizationToken(input *ecr.GetAuthorizationTokenInput) (*ecr.GetAuthorizationTokenOutput, error) {
+func (f *fakeEcrClient) GetAuthorizationToken(ctx context.Context, input *ecr.GetAuthorizationTokenInput, optFns ...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error) {
 	if len(input.RegistryIds) == 2 {
 		return &ecr.GetAuthorizationTokenOutput{
-			AuthorizationData: []*ecr.AuthorizationData{
+			AuthorizationData: []awsecrtypes.AuthorizationData{
 				{
 					AuthorizationToken: aws.String("fakeToken1"),
 					ProxyEndpoint:      aws.String("fakeEndpoint1"),
@@ -256,7 +257,7 @@ func (f *fakeEcrClient) GetAuthorizationToken(input *ecr.GetAuthorizationTokenIn
 		}, nil
 	}
 	return &ecr.GetAuthorizationTokenOutput{
-		AuthorizationData: []*ecr.AuthorizationData{
+		AuthorizationData: []awsecrtypes.AuthorizationData{
 			{
 				AuthorizationToken: aws.String("fakeToken"),
 				ProxyEndpoint:      aws.String("fakeEndpoint"),
@@ -267,7 +268,7 @@ func (f *fakeEcrClient) GetAuthorizationToken(input *ecr.GetAuthorizationTokenIn
 
 type fakeFailingEcrClient struct{}
 
-func (f *fakeFailingEcrClient) GetAuthorizationToken(input *ecr.GetAuthorizationTokenInput) (*ecr.GetAuthorizationTokenOutput, error) {
+func (f *fakeFailingEcrClient) GetAuthorizationToken(ctx context.Context, input *ecr.GetAuthorizationTokenInput, optFns ...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error) {
 	return nil, errors.New("fake error")
 }
 
